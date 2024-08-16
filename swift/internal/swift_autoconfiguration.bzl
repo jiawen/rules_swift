@@ -25,7 +25,7 @@ Skylib.
 """
 
 load(
-    "//swift/internal:feature_names.bzl",
+    ":feature_names.bzl",
     "SWIFT_FEATURE_CODEVIEW_DEBUG_INFO",
     "SWIFT_FEATURE_DEBUG_PREFIX_MAP",
     "SWIFT_FEATURE_EMIT_SWIFTDOC",
@@ -42,6 +42,7 @@ load(
     "SWIFT_FEATURE_USE_OLD_DRIVER",
     "SWIFT_FEATURE__SUPPORTS_MACROS",
 )
+load(":toolchain_utils.bzl", "SWIFT_TOOLCHAIN_TYPE")
 
 def _scratch_file(repository_ctx, temp_dir, name, content = ""):
     """Creates and returns a scratch file with the given name and content.
@@ -309,6 +310,10 @@ def _create_xcode_toolchain(repository_ctx):
         "BUILD",
         """
 load(
+    "@build_bazel_apple_support//configs:platforms.bzl",
+    "APPLE_PLATFORMS_CONSTRAINTS",
+)
+load(
     "@build_bazel_rules_swift//swift/toolchains:xcode_swift_toolchain.bzl",
     "xcode_swift_toolchain",
 )
@@ -319,11 +324,34 @@ xcode_swift_toolchain(
     name = "toolchain",
     features = [{feature_list}],
 )
+
+_OSX_DEVELOPER_PLATFORM_CPUS = [
+    "arm64",
+    "x86_64",
+]
+
+[
+    toolchain(
+        name = "xcode-toolchain-" + arch + "-" + cpu,
+        exec_compatible_with = [
+            # These only execute on macOS
+            "@platforms//os:macos",
+            "@platforms//cpu:" + cpu,
+        ],
+        target_compatible_with = APPLE_PLATFORMS_CONSTRAINTS[arch],
+        toolchain = ":toolchain",
+        toolchain_type = "{toolchain_type}",
+        visibility = ["//visibility:public"],
+    )
+    for arch in APPLE_PLATFORMS_CONSTRAINTS.keys()
+    for cpu in _OSX_DEVELOPER_PLATFORM_CPUS
+]
 """.format(
             feature_list = ", ".join([
                 '"{}"'.format(feature)
                 for feature in feature_values
             ]),
+            toolchain_type = SWIFT_TOOLCHAIN_TYPE,
         ),
     )
 
@@ -407,13 +435,13 @@ def _swift_autoconfiguration_impl(repository_ctx):
     # TODO(allevato): This is expedient and fragile. Use the
     # platforms/toolchains APIs instead to define proper toolchains, and make it
     # possible to support non-Xcode toolchains on macOS as well.
-    os_name = repository_ctx.os.name.lower()
-    if os_name.startswith("mac os"):
-        _create_xcode_toolchain(repository_ctx)
-    elif os_name.startswith("windows"):
-        _create_windows_toolchain(repository_ctx)
-    else:
-        _create_linux_toolchain(repository_ctx)
+    # os_name = repository_ctx.os.name.lower()
+    # if os_name.startswith("mac os"):
+    _create_xcode_toolchain(repository_ctx)
+    # elif os_name.startswith("windows"):
+    #     _create_windows_toolchain(repository_ctx)
+    # else:
+    #     _create_linux_toolchain(repository_ctx)
 
 swift_autoconfiguration = repository_rule(
     environ = ["CC", "PATH", "ProgramData", "Path"],
